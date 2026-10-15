@@ -1,0 +1,16 @@
+{
+  "name": "任务管理 · 待办与每日复盘",
+  "short_name": "任务管理",
+  "description": "三类任务、子任务层级、甘特图与每日复盘的本地任务管理器，数据保存在本机浏览器。",
+  "lang": "zh-CN",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6fb",
+  "theme_color": "#4f63ff",
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

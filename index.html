@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
 <meta name="theme-color" content="#101318" media="(prefers-color-scheme: dark)" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="任务管理" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<link rel="icon" type="image/png" sizes="32x32" href="./icons/favicon-32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="./icons/favicon-16.png" />
 <title>任务管理</title>
 <style>
   :root {
@@ -168,6 +176,15 @@
   .empty .big { font-size: 30px; margin-bottom: 8px; }
   .txtbtn { display: block; width: 100%; margin: 14px 0 0; background: transparent; border: 0; color: var(--text-3); font-size: 12.5px; cursor: pointer; padding: 10px; }
   .txtbtn.armed { color: var(--danger); font-weight: 700; }
+  .databar { display: flex; gap: 8px; margin-top: 10px; }
+  .databar .txtbtn {
+    margin: 0; flex: 1; height: 44px; border: 1.5px solid var(--border); border-radius: 12px;
+    background: var(--card); color: var(--text-2); font-size: 12.5px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; transition: all .16s;
+  }
+  .databar .txtbtn:active { background: var(--soft); }
+  .databar .txtbtn.on { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); font-weight: 700; }
+  .datatip { text-align: center; color: var(--text-3); font-size: 11px; line-height: 1.6; margin: 10px 6px 0; }
 
   .btn { height: 46px; border: 0; border-radius: 13px; font-size: 15px; font-weight: 650; cursor: pointer; padding: 0 18px; transition: transform .1s, background .18s, color .18s; }
   .btn:active { transform: scale(.98); }
@@ -338,6 +355,12 @@
       </div>
       <div id="listBody"></div>
       <button type="button" class="txtbtn" id="btnClear" hidden>清空全部任务</button>
+      <div class="databar">
+        <button type="button" class="txtbtn" id="btnExport">导出备份（保存为文件）</button>
+        <button type="button" class="txtbtn" id="btnImport">从备份文件恢复</button>
+      </div>
+      <input type="file" id="fileImport" accept=".json,application/json" hidden />
+      <p class="datatip">数据仅保存在本机浏览器中。更新网页不会影响已有数据；换手机或换网址前，请先导出备份。</p>
     </section>
 
     <!-- ============ 甘特图视图 ============ -->
@@ -469,14 +492,9 @@
       if (raw) {
         var d = JSON.parse(raw);
         if (d && Array.isArray(d.tasks)) {
-          state.tasks = d.tasks.filter(function (t) { return t && typeof t.title === 'string'; }).map(function (t) {
-            if (t.parentId !== null && typeof t.parentId !== 'string') t.parentId = null;
-            if (TYPE_LABEL[t.type] === undefined) t.type = 'temp';
-            if (STATUS_LABEL[t.status] === undefined) t.status = 'todo';
-            return t;
-          });
-          state.plans = d.plans || {};
-          state.notes = d.notes || {};
+          state.tasks = sanitizeTasks(d.tasks);
+          state.plans = (d.plans && typeof d.plans === 'object') ? d.plans : {};
+          state.notes = (d.notes && typeof d.notes === 'object') ? d.notes : {};
           return;
         }
       }
@@ -497,6 +515,22 @@
         }
       }
     } catch (e) { /* 数据损坏时忽略 */ }
+  }
+
+  /* 数据归一化：容错处理缺失或异常的字段 */
+  function sanitizeTasks(arr) {
+    return arr.filter(function (t) { return t && typeof t.title === 'string'; }).map(function (t) {
+      if (typeof t.id !== 'string' || !t.id) t.id = uid();
+      if (typeof t.parentId !== 'string' || !t.parentId) t.parentId = null;
+      if (TYPE_LABEL[t.type] === undefined) t.type = 'temp';
+      if (STATUS_LABEL[t.status] === undefined) t.status = 'todo';
+      t.collapsed = !!t.collapsed;
+      t.createdAt = Number(t.createdAt) || Date.now();
+      t.completedAt = t.completedAt ? Number(t.completedAt) : null;
+      t.start = typeof t.start === 'string' ? t.start : null;
+      t.deadline = typeof t.deadline === 'string' ? t.deadline : null;
+      return t;
+    });
   }
 
   /* ==================== 查询 ==================== */
@@ -1310,6 +1344,82 @@
   fTitle.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveSheet(); } });
   fDeadline.addEventListener('change', function () { wrapDeadline.classList.remove('invalid'); fHint.hidden = true; });
 
+  /* ==================== 备份 / 恢复 ==================== */
+  function exportData() {
+    var payload = {
+      app: 'task-manager', version: 2, exportedAt: new Date().toISOString(),
+      tasks: state.tasks, plans: state.plans, notes: state.notes
+    };
+    var json = JSON.stringify(payload, null, 2);
+    var name = '任务备份-' + todayStr() + '.json';
+    var a = document.createElement('a');
+    a.download = name;
+    var blobUrl = '';
+    try {
+      if (window.Blob && window.URL && window.URL.createObjectURL) {
+        blobUrl = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
+        a.href = blobUrl;
+      } else {
+        a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+      }
+    } catch (e) {
+      a.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(json);
+    }
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (blobUrl) setTimeout(function () { try { URL.revokeObjectURL(blobUrl); } catch (e) {} }, 4000);
+    toast('已导出：' + name);
+  }
+
+  var importArmTimer = null;
+  function disarmImport() {
+    var b = $('btnImport');
+    b.classList.remove('on');
+    b.textContent = '从备份文件恢复';
+    if (importArmTimer) { clearTimeout(importArmTimer); importArmTimer = null; }
+  }
+  function importData(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var d = JSON.parse(String(reader.result));
+        if (!d || !Array.isArray(d.tasks)) throw new Error('bad');
+        state.tasks = sanitizeTasks(d.tasks);
+        state.plans = (d.plans && typeof d.plans === 'object') ? d.plans : {};
+        state.notes = (d.notes && typeof d.notes === 'object') ? d.notes : {};
+        save();
+        render();
+        toast('已恢复 ' + state.tasks.length + ' 条任务');
+      } catch (e) {
+        toast('恢复失败：备份文件格式不正确');
+      }
+      disarmImport();
+    };
+    reader.onerror = function () { toast('读取文件失败'); disarmImport(); };
+    reader.readAsText(file);
+  }
+
+  $('btnExport').addEventListener('click', exportData);
+  $('btnImport').addEventListener('click', function () {
+    var b = $('btnImport');
+    if (!b.classList.contains('on')) {
+      b.classList.add('on');
+      b.textContent = '再点一次，选择备份文件';
+      if (importArmTimer) clearTimeout(importArmTimer);
+      importArmTimer = setTimeout(disarmImport, 4000);
+      return;
+    }
+    disarmImport();
+    var f = $('fileImport');
+    f.value = '';
+    try { f.click(); } catch (e) {}
+  });
+  $('fileImport').addEventListener('change', function (e) {
+    var f = e.target.files && e.target.files[0];
+    if (f) importData(f);
+  });
+
   /* ==================== 示例数据 ==================== */
   function loadDemo() {
     var now = Date.now();
@@ -1356,6 +1466,16 @@
   })();
   load();
   render();
+
+  /* 注册离线缓存，让页面装到手机桌面后可以断网使用 */
+  (function () {
+    if (!('serviceWorker' in navigator)) return;
+    var okProto = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+    if (!okProto) return;
+    window.addEventListener('load', function () {
+      try { navigator.serviceWorker.register('./sw.js').catch(function () {}); } catch (e) {}
+    });
+  })();
 })();
 </script>
 </body>
