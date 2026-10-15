@@ -1,5 +1,5 @@
 /* 离线缓存：页面始终优先取最新版本，断网时用缓存兜底 */
-var CACHE = 'task-manager-v2';
+var CACHE = 'task-manager-v3';
 var ASSETS = [
   './',
   './index.html',
@@ -7,7 +7,8 @@ var ASSETS = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
-  './icons/favicon-32.png'
+  './icons/favicon-32.png',
+  './icons/favicon-16.png'
 ];
 
 self.addEventListener('install', function (e) {
